@@ -3,7 +3,9 @@ storageClass: openebs-cstor
 
 postgresql:
   image:
-    tag: 16.2.0-debian-11-r11
+    registry: sxwl-registry.cn-beijing.cr.aliyuncs.com
+    repository: sxwl-ai/postgresql-vector
+    tag: "16"
   auth:
     username: postgres
     password: yourpassword
