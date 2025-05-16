@@ -1,0 +1,104 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: openebs-stack-kafka-connect
+  labels:
+    app: kafka-connect
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: kafka-connect
+  template:
+    metadata:
+      labels:
+        app: kafka-connect
+    spec:
+      initContainers:
+        - name: wait-for-kafka
+          image: busybox:1.34
+          command: ['sh', '-c']
+          args:
+            - |
+              echo "Waiting for Kafka to be ready..."
+              sleep 10
+      containers:
+        - name: kafka-connect
+          image: "{{ .Values.kafkaConnect.image }}"
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 8083
+              name: rest
+          command: ["/bin/bash", "-c"]
+          args:
+            - |
+              # 从Secret获取密码
+              echo "从Secret获取Kafka密码..."
+              PASSWORD=$(cat /secrets/client-passwords)
+              if [ -z "$PASSWORD" ]; then
+                echo "错误: 无法获取Kafka密码!"
+                exit 1
+              fi
+              
+              # 创建JAAS配置
+              echo "创建JAAS配置..."
+              export JAAS_CONFIG="org.apache.kafka.common.security.plain.PlainLoginModule required username=\"user1\" password=\"$PASSWORD\";"
+              export CONNECT_SASL_JAAS_CONFIG="$JAAS_CONFIG"
+              export CONNECT_CONSUMER_SASL_JAAS_CONFIG="$JAAS_CONFIG"
+              export CONNECT_PRODUCER_SASL_JAAS_CONFIG="$JAAS_CONFIG"
+              
+              echo "JAAS配置创建成功，启动Kafka Connect..."
+              exec /etc/confluent/docker/run
+          env:
+            - name: CONNECT_BOOTSTRAP_SERVERS
+              value: "{{ .Values.kafkaConnect.bootstrapServers }}"
+            - name: CONNECT_REST_PORT
+              value: "8083"
+            - name: CONNECT_REST_ADVERTISED_HOST_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: status.podIP
+            - name: CONNECT_GROUP_ID
+              value: "connect-cluster"
+            - name: CONNECT_CONFIG_STORAGE_TOPIC
+              value: "connect-configs"
+            - name: CONNECT_OFFSET_STORAGE_TOPIC
+              value: "connect-offsets"
+            - name: CONNECT_STATUS_STORAGE_TOPIC
+              value: "connect-status"
+            - name: CONNECT_KEY_CONVERTER
+              value: "org.apache.kafka.connect.json.JsonConverter"
+            - name: CONNECT_VALUE_CONVERTER
+              value: "org.apache.kafka.connect.json.JsonConverter"
+            - name: CONNECT_INTERNAL_KEY_CONVERTER
+              value: "org.apache.kafka.connect.json.JsonConverter"
+            - name: CONNECT_INTERNAL_VALUE_CONVERTER
+              value: "org.apache.kafka.connect.json.JsonConverter"
+            - name: CONNECT_PLUGIN_PATH
+              value: "/usr/share/java/kafka/plugins"
+            # Kafka认证配置
+            - name: CONNECT_SECURITY_PROTOCOL
+              value: SASL_PLAINTEXT
+            - name: CONNECT_SASL_MECHANISM
+              value: PLAIN
+            - name: CONNECT_CLIENT_ID
+              value: kafka-connect
+            - name: CONNECT_CONSUMER_SECURITY_PROTOCOL
+              value: SASL_PLAINTEXT
+            - name: CONNECT_CONSUMER_SASL_MECHANISM
+              value: PLAIN
+            - name: CONNECT_PRODUCER_SECURITY_PROTOCOL
+              value: SASL_PLAINTEXT
+            - name: CONNECT_PRODUCER_SASL_MECHANISM
+              value: PLAIN
+{{- with .Values.kafkaConnect.extraEnvVars }}
+{{ toYaml . | indent 12 }}
+{{- end }}
+          volumeMounts:
+            - name: kafka-secrets
+              mountPath: /secrets
+      volumes:
+        - name: kafka-secrets
+          secret:
+            secretName: openebs-stack-kafka-user-passwords
+            optional: true

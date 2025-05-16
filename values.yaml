@@ -1,0 +1,83 @@
+replicaCount: 1
+storageClass: openebs-cstor
+
+postgresql:
+  image:
+    tag: 16.2.0-debian-11-r11
+  auth:
+    username: postgres
+    password: yourpassword
+    database: yourdb
+  primary:
+    configuration: |
+      wal_level = logical
+      max_wal_senders = 10
+      max_replication_slots = 10
+      listen_addresses = '*'
+      port = 5432
+    persistence:
+      storageClass: openebs-cstor
+      size: 10Gi
+      enabled: true
+
+redis:
+  image:
+    tag: 6.2.14-debian-11-r8
+  architecture: standalone
+  master:
+    persistence:
+      storageClass: openebs-cstor
+      size: 5Gi
+      enabled: true
+
+rabbitmq:
+  image:
+    tag: 3.13.1-debian-12-r1
+  auth:
+    username: user
+    password: bitnami123
+  persistence:
+    storageClass: openebs-cstor
+    size: 8Gi
+    enabled: true
+
+kafka:
+  kraft:
+    enabled: true
+
+  controller:
+    replicaCount: 1
+    persistence:
+      enabled: true
+      size: 8Gi
+      storageClass: openebs-cstor
+  
+  auth:
+    enabled: true
+    clientProtocol: sasl
+    interBrokerProtocol: sasl
+
+kafkaConnect:
+  enabled: true
+  image: sxwl-registry.cn-beijing.cr.aliyuncs.com/sxwl-ai/kafka-connect-debezium:latest
+  bootstrapServers: openebs-stack-kafka:9092
+
+  # 额外的环境变量（可选）
+  extraEnvVars:
+    - name: CONNECT_OFFSET_STORAGE_REPLICATION_FACTOR
+      value: "1"
+    - name: CONNECT_CONFIG_STORAGE_REPLICATION_FACTOR
+      value: "1"
+    - name: CONNECT_STATUS_STORAGE_REPLICATION_FACTOR
+      value: "1"
+
+quickwit:
+  enabled: true
+  replicaCount: 1
+  pvcSize: 20Gi
+  storageClass: openebs-cstor
+  storagePath: /quickwit/indexes
+  topic: pg1.public.example_table
+
+  # 额外的环境变量（可选）
+  extraEnvVars: []

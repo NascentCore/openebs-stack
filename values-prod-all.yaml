@@ -1,0 +1,102 @@
+postgresql:
+  image:
+    tag: 16.2.0-debian-11-r11
+  repmgrUsername: repmgr
+  repmgrPassword: repmgrpassword
+  repmgrDatabase: repmgr
+  password: yourpassword
+  username: postgres
+  database: yourdb
+
+  extendedConf:
+    wal_level: logical
+    max_replication_slots: 10
+    max_wal_senders: 10
+
+  persistence:
+    enabled: true
+    storageClass: openebs-cstor
+    size: 10Gi
+
+  pgpool:
+    replicaCount: 1
+    persistence:
+      enabled: false
+    adminUsername: admin
+    adminPassword: adminpassword
+
+  initdbScripts:
+    enable-pgvector.sql: |
+      CREATE EXTENSION IF NOT EXISTS vector;
+
+  volumePermissions:
+    enabled: true
+
+  resources:
+    requests:
+      memory: 256Mi
+      cpu: 100m
+    limits:
+      memory: 512Mi
+      cpu: 500m
+
+redis:
+  architecture: sentinel
+  image:
+    tag: 6.2.14-debian-11-r8
+  sentinel:
+    replicas: 3
+  replica:
+    replicaCount: 2
+  master:
+    persistence:
+      storageClass: openebs-cstor
+      size: 5Gi
+
+rabbitmq:
+  image:
+    tag: 3.13.1-debian-11-r0
+  replicaCount: 3
+  clustering:
+    enabled: true
+  persistence:
+    storageClass: openebs-cstor
+    size: 5Gi
+  extraConfiguration: |
+    loopback_users.guest = false
+    default_permissions.configure = .*
+    default_permissions.write = .*
+    default_permissions.read = .*
+    cluster_partition_handling = autoheal
+    queue_master_locator = min-masters
+    default_vhost = /
+
+kafka:
+  replicaCount: 3
+  persistence:
+    enabled: true
+    storageClass: openebs-cstor
+    size: 20Gi
+  zookeeper:
+    enabled: true
+    replicaCount: 3
+    persistence:
+      enabled: true
+      storageClass: openebs-cstor
+      size: 10Gi
+  metrics:
+    kafka:
+      enabled: true
+    zookeeper:
+      enabled: true
+
+kafkaConnect:
+  enabled: true
+  image: sxwl-registry.cn-beijing.cr.aliyuncs.com/sxwl-ai/kafka-connect-debezium:latest
+  bootstrapServers: kafka:9092
+
+quickwit:
+  enabled: true
+  replicaCount: 3
+  pvcSize: 20Gi
+  storagePath: /quickwit/indexes
