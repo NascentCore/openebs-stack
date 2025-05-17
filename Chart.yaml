@@ -6,6 +6,7 @@ dependencies:
   - name: postgresql
     version: 12.x.x
     repository: https://charts.bitnami.com/bitnami
+    condition: postgresql.enabled
   - name: redis
     version: 18.x.x
     repository: https://charts.bitnami.com/bitnami
@@ -15,3 +16,7 @@ dependencies:
   - name: rabbitmq
     version: 12.x.x
     repository: https://charts.bitnami.com/bitnami
+  - name: postgresql-ha
+    version: 12.x.x
+    repository: https://charts.bitnami.com/bitnami
+    condition: postgresql-ha.enabled

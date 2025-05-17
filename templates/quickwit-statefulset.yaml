@@ -1,21 +1,19 @@
 apiVersion: apps/v1
-kind: Deployment
+kind: StatefulSet
 metadata:
   name: openebs-stack-quickwit
   labels:
-    app.kubernetes.io/name: quickwit
-    app.kubernetes.io/part-of: openebs-stack
+    app: quickwit
 spec:
   replicas: {{ .Values.quickwit.replicaCount }}
+  serviceName: "openebs-stack-quickwit-headless"  # 为StatefulSet定义Headless Service
   selector:
     matchLabels:
-      app.kubernetes.io/name: quickwit
-      app.kubernetes.io/part-of: openebs-stack
+      app: quickwit
   template:
     metadata:
       labels:
-        app.kubernetes.io/name: quickwit
-        app.kubernetes.io/part-of: openebs-stack
+        app: quickwit
     spec:
       initContainers:
         - name: wait-for-kafka
@@ -47,6 +45,7 @@ spec:
               exec quickwit run
           ports:
             - containerPort: 7280
+              name: http
           volumeMounts:
             - name: quickwit-data
               mountPath: {{ .Values.quickwit.storagePath }}
@@ -63,24 +62,35 @@ spec:
 {{ toYaml . | indent 12 }}
 {{- end }}
       volumes:
-        - name: quickwit-data
-          persistentVolumeClaim:
-            claimName: quickwit-pvc
         - name: kafka-secrets
           secret:
             secretName: openebs-stack-kafka-user-passwords
             optional: true
+  # 使用volumeClaimTemplates替代单一PVC
+  volumeClaimTemplates:
+    - metadata:
+        name: quickwit-data
+      spec:
+        accessModes:
+          - ReadWriteOnce
+        resources:
+          requests:
+            storage: {{ .Values.quickwit.pvcSize }}
+        storageClassName: {{ .Values.quickwit.storageClass | default "openebs-cstor" }}
 
 ---
 
+# 为StatefulSet创建一个Headless Service
 apiVersion: v1
-kind: PersistentVolumeClaim
+kind: Service
 metadata:
-  name: quickwit-pvc
+  name: openebs-stack-quickwit-headless
+  labels:
+    app: quickwit
 spec:
-  accessModes:
-    - ReadWriteOnce
-  resources:
-    requests:
-      storage: {{ .Values.quickwit.pvcSize }}
-  storageClassName: {{ .Values.storageClass }}
+  clusterIP: None  # Headless服务的关键配置
+  selector:
+    app: quickwit
+  ports:
+    - port: 7280
+      name: http 

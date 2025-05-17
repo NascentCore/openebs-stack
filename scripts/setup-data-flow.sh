@@ -1,5 +1,5 @@
 #!/bin/bash
-# 数据流配置脚本: PostgreSQL -> Kafka Connect -> Kafka -> Quickwit
+# 数据流配置脚本(高可用版): PostgreSQL -> Kafka Connect -> Kafka -> Quickwit
 # 此脚本在部署完成后配置整个数据流路径
 
 # 获取脚本所在目录
@@ -26,51 +26,108 @@ print_error() {
   exit 1
 }
 
+# 自动检测部署模式（单机或高可用）
+detect_deployment_mode() {
+  # 检查是否存在PostgreSQL-HA服务
+  if kubectl get svc openebs-stack-postgresql-ha-pgpool &>/dev/null; then
+    echo "高可用"
+  else
+    echo "单机"
+  fi
+}
+
+# 根据部署模式设置服务名称
+DEPLOYMENT_MODE=$(detect_deployment_mode)
+if [ "$DEPLOYMENT_MODE" == "高可用" ]; then
+  print_success "检测到高可用部署模式"
+  # 设置两个连接字符串：一个用于读操作，一个用于写操作
+  PG_READ_SERVICE="openebs-stack-postgresql-ha-pgpool"
+  PG_WRITE_SERVICE="openebs-stack-postgresql-ha-postgresql-0.openebs-stack-postgresql-ha-postgresql-headless"
+  REPLICATION_FACTOR=3
+else
+  print_success "检测到单机部署模式"
+  # 单机模式下，读写使用同一连接
+  PG_READ_SERVICE="openebs-stack-postgresql"
+  PG_WRITE_SERVICE="openebs-stack-postgresql"
+  REPLICATION_FACTOR=1
+fi
+
 # 设置默认参数
 NAMESPACE=$(get_current_namespace)
-PG_SERVICE="openebs-stack-postgresql"
 PG_PORT=5432
 PG_USER="postgres"
 PG_PASSWORD="yourpassword"
-PG_DATABASE="postgres"
+PG_DATABASE="yourdb"  # 根据values-prod-all.yaml配置修改为yourdb
 KAFKA_SERVICE="openebs-stack-kafka"
-KAFKA_CONNECT_SERVICE="kafka-connect"
-QUICKWIT_SERVICE="openebs-stack-quickwit"
+KAFKA_TOPIC="postgres.public.messages"
+
+# 创建连接字符串
+PG_READ_CONN="postgresql://${PG_USER}:${PG_PASSWORD}@${PG_READ_SERVICE}:${PG_PORT}/${PG_DATABASE}"
+PG_WRITE_CONN="postgresql://${PG_USER}:${PG_PASSWORD}@${PG_WRITE_SERVICE}:${PG_PORT}/${PG_DATABASE}"
+
+# 获取Kafka Connect和Quickwit的Pod名称 - 获取第一个Pod
+KAFKA_CONNECT_POD=$(kubectl get pods -n "$NAMESPACE" | grep "openebs-stack-kafka-connect" | head -1 | awk '{print $1}')
+QUICKWIT_POD=$(kubectl get pods -n "$NAMESPACE" | grep "openebs-stack-quickwit" | head -1 | awk '{print $1}')
+KAFKA_POD=$(kubectl get pods -n "$NAMESPACE" | grep "openebs-stack-kafka-controller" | head -1 | awk '{print $1}')
 
 # 获取Kafka密码
 KAFKA_PASSWORD=$(get_secret_value "openebs-stack-kafka-user-passwords" "client-passwords" "$NAMESPACE" 2>/dev/null || echo 'temporaryPassword123')
 
 # 显示配置信息
 print_section "配置信息"
+echo "部署模式: $DEPLOYMENT_MODE"
 echo "命名空间: $NAMESPACE"
-echo "PostgreSQL服务: $PG_SERVICE"
+echo "PostgreSQL读服务: $PG_READ_SERVICE"
+echo "PostgreSQL写服务: $PG_WRITE_SERVICE"
 echo "Kafka服务: $KAFKA_SERVICE"
-echo "Kafka Connect服务: $KAFKA_CONNECT_SERVICE"
-echo "Quickwit服务: $QUICKWIT_SERVICE"
-
-if [ ! -f "$SCRIPT_DIR/.kafka_single_node_configured" ]; then
-  configure_kafka_single_node
-  touch "$SCRIPT_DIR/.kafka_single_node_configured"
-fi
+echo "Kafka Pod: $KAFKA_POD"
+echo "Kafka Connect Pod: $KAFKA_CONNECT_POD"
+echo "Quickwit Pod: $QUICKWIT_POD"
+echo "复制因子: $REPLICATION_FACTOR"
+echo "Kafka主题: $KAFKA_TOPIC"
 
 # 等待所有组件准备就绪
 print_section "等待组件准备就绪"
 
-print_step "等待PostgreSQL准备就绪..."
-wait_for_pod_ready "$PG_SERVICE" "$NAMESPACE" 30 10 || print_error "PostgreSQL未准备就绪"
-print_success "PostgreSQL准备就绪"
+if [ "$DEPLOYMENT_MODE" == "高可用" ]; then
+  print_step "等待PostgreSQL节点准备就绪..."
+  wait_for_pod_ready "openebs-stack-postgresql-ha-postgresql" "$NAMESPACE" 60 15 || print_error "PostgreSQL HA节点未准备就绪"
+  print_success "PostgreSQL HA节点准备就绪"
+
+  print_step "等待PostgreSQL pgpool准备就绪..."
+  wait_for_pod_ready "openebs-stack-postgresql-ha-pgpool" "$NAMESPACE" 60 15 || print_error "PostgreSQL pgpool未准备就绪"
+  print_success "PostgreSQL pgpool准备就绪"
+else
+  print_step "等待PostgreSQL准备就绪..."
+  wait_for_pod_ready "openebs-stack-postgresql" "$NAMESPACE" 60 15 || print_error "PostgreSQL未准备就绪"
+  print_success "PostgreSQL准备就绪"
+fi
 
 print_step "等待Kafka准备就绪..."
-wait_for_pod_ready "$KAFKA_SERVICE" "$NAMESPACE" 30 10 || print_error "Kafka未准备就绪"
-print_success "Kafka准备就绪"
+wait_for_pod_ready "openebs-stack-kafka-controller" "$NAMESPACE" 60 15 || print_error "Kafka控制器未准备就绪"
+print_success "Kafka控制器准备就绪"
 
 print_step "等待Kafka Connect准备就绪..."
-wait_for_pod_ready "$KAFKA_CONNECT_SERVICE" "$NAMESPACE" 30 10 || print_error "Kafka Connect未准备就绪"
+wait_for_pod_ready "openebs-stack-kafka-connect" "$NAMESPACE" 60 15 || print_error "Kafka Connect未准备就绪"
 print_success "Kafka Connect准备就绪"
 
 print_step "等待Quickwit准备就绪..."
-wait_for_pod_ready "$QUICKWIT_SERVICE" "$NAMESPACE" 30 10 || print_error "Quickwit未准备就绪"
+wait_for_pod_ready "openebs-stack-quickwit" "$NAMESPACE" 60 15 || print_error "Quickwit未准备就绪"
 print_success "Quickwit准备就绪"
+
+if [ "$DEPLOYMENT_MODE" == "单机" ]; then
+  if [ ! -f "$SCRIPT_DIR/.kafka_single_node_configured" ]; then
+    configure_kafka_single_node
+    touch "$SCRIPT_DIR/.kafka_single_node_configured"
+  fi
+fi
+
+# 检查Vector扩展安装状态
+print_section "检查Vector扩展"
+kubectl run pg-install-vector-$RANDOM --rm -i --restart=Never --image=postgres:13 --namespace="$NAMESPACE" -- \
+  psql "$PG_WRITE_CONN" -c \
+  "CREATE EXTENSION IF NOT EXISTS vector;" || print_error "安装Vector扩展失败"
+print_success "Vector扩展安装成功"
 
 # 第1步: 在PostgreSQL中创建测试表和数据
 print_section "配置PostgreSQL"
@@ -85,12 +142,12 @@ CREATE TABLE IF NOT EXISTS public.messages (
 );
 "
 kubectl run pg-create-table-$RANDOM --rm -i --restart=Never --image=postgres:13 --namespace="$NAMESPACE" -- \
-  psql "postgresql://${PG_USER}:${PG_PASSWORD}@${PG_SERVICE}:${PG_PORT}/${PG_DATABASE}" -c "$MESSAGES_TABLE_SQL" || print_error "创建消息表失败"
+  psql "$PG_WRITE_CONN" -c "$MESSAGES_TABLE_SQL" || print_error "创建消息表失败"
 print_success "消息表创建成功"
 
 print_step "插入测试数据..."
 kubectl run pg-insert-data-$RANDOM --rm -i --restart=Never --image=postgres:13 --namespace="$NAMESPACE" -- \
-  psql "postgresql://${PG_USER}:${PG_PASSWORD}@${PG_SERVICE}:${PG_PORT}/${PG_DATABASE}" -c \
+  psql "$PG_WRITE_CONN" -c \
   "INSERT INTO public.messages (message, user_id, ts) VALUES 
    ('这是一条测试消息', 1001, '2025-05-15T05:20:06.246314Z'),
    ('这是另一条测试消息', 1002, '2025-05-15T05:50:06.246314Z'),
@@ -100,37 +157,49 @@ kubectl run pg-insert-data-$RANDOM --rm -i --restart=Never --image=postgres:13 -
    ON CONFLICT DO NOTHING;" || print_error "插入测试数据失败"
 print_success "测试数据插入成功"
 
-# 第2步: 配置Kafka Connect
+# 第2步: 创建PostgreSQL publication和复制槽
+print_section "配置PostgreSQL CDC"
+
+print_step "创建PostgreSQL publication..."
+PG_PUBLICATION_SQL="
+DROP PUBLICATION IF EXISTS dbz_publication;
+CREATE PUBLICATION dbz_publication FOR TABLE public.messages;
+"
+kubectl run pg-create-pub-$RANDOM --rm -i --restart=Never --image=postgres:13 --namespace="$NAMESPACE" -- \
+  psql "$PG_WRITE_CONN" -c "$PG_PUBLICATION_SQL" || print_error "创建PostgreSQL publication失败"
+print_success "PostgreSQL publication创建成功"
+
+# 第3步: 配置Kafka Connect
 print_section "配置Kafka Connect"
 
-# 获取Kafka Connect URL
-KAFKA_CONNECT_URL=$(get_service_url "$KAFKA_CONNECT_SERVICE" "http" "" "$NAMESPACE")
+# 获取Kafka Connect服务地址
+KAFKA_CONNECT_URL="http://$(kubectl get svc kafka-connect -n $NAMESPACE -o jsonpath='{.spec.clusterIP}'):8083"
 
 # 检查并删除已存在的连接器
 print_step "检查并删除已存在的Debezium PostgreSQL连接器..."
-kubectl run kafka-connect-delete-$RANDOM --rm -i --restart=Never --image=curlimages/curl --namespace="$NAMESPACE" -- \
+kubectl run kafka-connect-check-$RANDOM --rm -i --restart=Never --image=curlimages/curl --namespace="$NAMESPACE" -- \
   curl -s -X DELETE "${KAFKA_CONNECT_URL}/connectors/postgres-source" || echo "没有找到现有连接器或删除失败，继续创建..."
 
 # 等待几秒钟确保删除操作完成
-sleep 3
+sleep 5
 
 print_step "删除PostgreSQL复制槽(如果存在)..."
 kubectl run pg-drop-slot-$RANDOM --rm -i --restart=Never --image=postgres:13 --namespace="$NAMESPACE" -- \
-  psql "postgresql://${PG_USER}:${PG_PASSWORD}@${PG_SERVICE}:${PG_PORT}/${PG_DATABASE}" -c \
+  psql "$PG_WRITE_CONN" -c \
   "SELECT pg_drop_replication_slot(slot_name) FROM pg_replication_slots WHERE slot_name = 'debezium';" || echo "未找到复制槽或删除失败，继续创建..."
 
 # 等待几秒钟确保删除操作完成
-sleep 3
+sleep 5
 
 print_step "创建Debezium PostgreSQL连接器..."
-# 构建PostgreSQL连接器配置（添加了ExtractNewRecordState转换器）
+# 构建PostgreSQL连接器配置 - 直接连接主节点，不使用pgpool
 PG_CONNECTOR_CONFIG=$(cat <<EOF
 {
   "name": "postgres-source",
   "config": {
     "connector.class": "io.debezium.connector.postgresql.PostgresConnector",
     "tasks.max": "1",
-    "database.hostname": "$PG_SERVICE",
+    "database.hostname": "$PG_WRITE_SERVICE",
     "database.port": "$PG_PORT",
     "database.user": "$PG_USER",
     "database.password": "$PG_PASSWORD",
@@ -148,35 +217,82 @@ PG_CONNECTOR_CONFIG=$(cat <<EOF
     "publication.name": "dbz_publication",
     "transforms": "unwrap",
     "transforms.unwrap.type": "io.debezium.transforms.ExtractNewRecordState",
-    "transforms.unwrap.drop.tombstones": "false"
+    "transforms.unwrap.drop.tombstones": "false",
+    
+    "config.storage.replication.factor": "$REPLICATION_FACTOR",
+    "offset.storage.replication.factor": "$REPLICATION_FACTOR", 
+    "status.storage.replication.factor": "$REPLICATION_FACTOR",
+    
+    "heartbeat.interval.ms": "5000",
+    "max.queue.size": "8192",
+    "max.batch.size": "1024",
+    "poll.interval.ms": "1000"
   }
 }
 EOF
 )
 
-# 使用kubectl创建临时Pod发送连接器配置
-kubectl run kfk-connect-config-$RANDOM --rm -i --restart=Never --image=curlimages/curl --namespace="$NAMESPACE" -- \
+# 使用curl Pod发送连接器配置
+kubectl run kafka-connect-create-$RANDOM --rm -i --restart=Never --image=curlimages/curl --namespace="$NAMESPACE" -- \
   -X POST -H "Content-Type: application/json" -d "$PG_CONNECTOR_CONFIG" "${KAFKA_CONNECT_URL}/connectors" || print_error "创建Debezium PostgreSQL连接器失败"
 
 print_success "Debezium PostgreSQL连接器创建成功"
 
-# 第3步: 创建Quickwit索引
+# 等待连接器启动并创建主题
+print_step "等待连接器启动并创建主题(10秒)..."
+sleep 10
+
+# 第4步: 确认Kafka主题是否已经创建
+print_section "验证Kafka主题"
+
+print_step "检查Kafka中的主题是否存在..."
+
+# 跳过Kafka主题检查，直接创建主题
+print_step "直接创建Kafka主题 $KAFKA_TOPIC..."
+
+# 准备Kafka认证配置文件
+cat > /tmp/client.properties << EOF
+security.protocol=SASL_PLAINTEXT
+sasl.mechanism=PLAIN
+EOF
+
+# 准备JAAS配置
+cat > /tmp/kafka-jaas.conf << EOF
+KafkaClient {
+  org.apache.kafka.common.security.plain.PlainLoginModule required
+  username="user1"
+  password="$KAFKA_PASSWORD";
+};
+EOF
+
+# 复制配置文件到Kafka Pod
+kubectl cp /tmp/client.properties $NAMESPACE/$KAFKA_POD:/tmp/client.properties
+kubectl cp /tmp/kafka-jaas.conf $NAMESPACE/$KAFKA_POD:/tmp/kafka-jaas.conf
+
+# 在Kafka Pod中创建主题
+kubectl exec -it $KAFKA_POD -n "$NAMESPACE" -- bash -c "
+  export KAFKA_OPTS='-Djava.security.auth.login.config=/tmp/kafka-jaas.conf'
+  
+  # 先尝试检查主题是否存在
+  if kafka-topics.sh --list --bootstrap-server $KAFKA_SERVICE:9092 --command-config /tmp/client.properties | grep -q '$KAFKA_TOPIC'; then
+    echo 'Kafka主题已存在'
+  else
+    echo '创建Kafka主题'
+    kafka-topics.sh --create --bootstrap-server $KAFKA_SERVICE:9092 --replication-factor $REPLICATION_FACTOR --partitions 3 --topic $KAFKA_TOPIC --command-config /tmp/client.properties || echo 'Kafka主题创建失败，尝试继续执行'
+  fi
+"
+
+print_success "Kafka主题配置完成"
+
+# 第5步: 创建Quickwit索引
 print_section "配置Quickwit"
-QUICKWIT_URL=$(get_service_url "$QUICKWIT_SERVICE" "http" "" "$NAMESPACE")
 
-# 先获取并删除已存在的索引
-print_step "检查并列出已存在的Quickwit索引..."
-INDEXES_RESPONSE=$(kubectl run quickwit-list-index-$RANDOM --rm -i --restart=Never --image=curlimages/curl --namespace="$NAMESPACE" -- \
-  curl -s "${QUICKWIT_URL}/api/v1/index" || echo "获取索引列表失败")
-
-if echo "$INDEXES_RESPONSE" | grep -q "messages"; then
-  print_step "删除已存在的Quickwit索引..."
-  kubectl run quickwit-delete-index-$RANDOM --rm -i --restart=Never --image=curlimages/curl --namespace="$NAMESPACE" -- \
-    curl -s -X DELETE "${QUICKWIT_URL}/api/v1/index/messages" || echo "删除索引失败，但将继续创建..."
-fi
+# 先删除已存在的索引
+print_step "检查并删除已存在的Quickwit索引..."
+kubectl exec -it "$QUICKWIT_POD" -n "$NAMESPACE" -- quickwit index delete --index messages --yes 2>/dev/null || echo "没有找到索引或删除失败，继续创建..."
 
 # 等待几秒钟确保删除操作完成
-sleep 3
+sleep 5
 
 print_step "创建Quickwit索引..."
 # 创建Quickwit索引配置
@@ -230,79 +346,33 @@ cat <<EOF > /tmp/quickwit-index-config.json
 EOF
 
 # 复制配置文件到Quickwit容器
-QUICKWIT_POD=$(kubectl get pods -n "$NAMESPACE" | grep quickwit | awk '{print $1}' | head -n 1)
-if [ -z "$QUICKWIT_POD" ]; then
-  print_error "未找到Quickwit Pod"
-fi
-
 kubectl cp /tmp/quickwit-index-config.json "$NAMESPACE/$QUICKWIT_POD:/tmp/index-config.json"
 
 # 使用CLI创建索引
 kubectl exec -it "$QUICKWIT_POD" -n "$NAMESPACE" -- quickwit index create --index-config /tmp/index-config.json --overwrite --yes || print_error "使用CLI创建索引失败"
 
-# 获取index_uid
-INDEX_INFO=$(kubectl exec -it "$QUICKWIT_POD" -n "$NAMESPACE" -- quickwit index list --output json)
-INDEX_UID=$(echo "$INDEX_INFO" | grep -o '"[^"]*messages[^"]*"' | tr -d '"' | head -n 1)
+print_success "Quickwit索引创建成功"
 
-if [[ -z "$INDEX_UID" ]]; then
-  print_step "无法从响应中提取index_uid，尝试直接使用索引ID..."
-  INDEX_UID="messages"
-else
-  print_success "成功获取index_uid: $INDEX_UID"
-fi
-
-# 直接尝试多种可能的API路径格式
-if [ "$INDEX_UID" != "messages" ]; then
-  API_PATHS=(
-    "/api/v1/indexes/messages"
-    "/api/v1/index/messages"
-    "/api/v1/indexes/$INDEX_UID"
-    "/api/v1/index/$INDEX_UID"
-  )
-else
-  API_PATHS=(
-    "/api/v1/indexes/messages"
-    "/api/v1/index/messages"
-  )
-fi
-
-SEARCH_URL=""
-for path in "${API_PATHS[@]}"; do
-  TEST_RESPONSE=$(kubectl run quickwit-test-path-$RANDOM --rm -i --restart=Never --image=curlimages/curl --namespace="$NAMESPACE" -- \
-    curl -s "${QUICKWIT_URL}${path}/search?query=*" || echo "路径不可访问")
-  
-  if ! echo "$TEST_RESPONSE" | grep -q "Route not found"; then
-    print_success "找到有效的API路径: ${path}"
-    SEARCH_URL="${QUICKWIT_URL}${path}"
-    break
-  fi
-done
-
-if [ -z "$SEARCH_URL" ]; then
-  print_step "未能找到有效的API路径，继续使用CLI命令..."
-  SEARCH_URL="${QUICKWIT_URL}/api/v1/index/$INDEX_UID"
-fi
-
-# 第4步: 配置Quickwit消息源
+# 第6步: 配置Quickwit消息源
 print_section "配置Quickwit消息源"
 
 print_step "检查并删除已存在的Quickwit Kafka源..."
 # 通过CLI删除Kafka源
-kubectl exec -it "$QUICKWIT_POD" -n "$NAMESPACE" -- quickwit source delete --index messages --source kafka_source --yes || echo "没有找到现有Kafka源或删除失败，继续创建..."
+kubectl exec -it "$QUICKWIT_POD" -n "$NAMESPACE" -- quickwit source delete --index messages --source kafka_source --yes 2>/dev/null || echo "没有找到现有Kafka源或删除失败，继续创建..."
 
 # 等待几秒钟确保删除操作完成
-sleep 3
+sleep 5
 
 print_step "配置Quickwit Kafka源..."
-# 移除transform脚本，因为现在我们在Kafka Connect层面进行转换
+# 为环境配置Kafka源
 QUICKWIT_SOURCE_CONFIG=$(cat <<EOF
 {
   "version": "0.8",
   "source_id": "kafka_source",
   "source_type": "kafka",
-  "num_pipelines": 1,
+  "num_pipelines": $REPLICATION_FACTOR,
   "params": {
-    "topic": "postgres.public.messages",
+    "topic": "$KAFKA_TOPIC",
     "client_params": {
       "bootstrap.servers": "${KAFKA_SERVICE}:9092",
       "security.protocol": "SASL_PLAINTEXT",
@@ -326,36 +396,21 @@ kubectl exec -it "$QUICKWIT_POD" -n "$NAMESPACE" -- quickwit source create --ind
 
 print_success "Quickwit Kafka源配置成功"
 
-# 第5步: 创建PostgreSQL publication和复制槽
-print_section "配置PostgreSQL CDC"
-
-print_step "创建PostgreSQL publication..."
-PG_PUBLICATION_SQL="
-DROP PUBLICATION IF EXISTS dbz_publication;
-CREATE PUBLICATION dbz_publication FOR TABLE public.messages;
-"
-kubectl run pg-create-pub-$RANDOM --rm -i --restart=Never --image=postgres:13 --namespace="$NAMESPACE" -- \
-  psql "postgresql://${PG_USER}:${PG_PASSWORD}@${PG_SERVICE}:${PG_PORT}/${PG_DATABASE}" -c "$PG_PUBLICATION_SQL" || print_error "创建PostgreSQL publication失败"
-print_success "PostgreSQL publication创建成功"
-
 # 配置成功
 print_section "配置完成"
 echo -e "\033[1;32m数据流配置已完成: PostgreSQL -> Kafka Connect -> Kafka -> Quickwit\033[0m"
+echo "部署模式: $DEPLOYMENT_MODE（复制因子: $REPLICATION_FACTOR）"
 echo "可以在PostgreSQL中插入新数据，然后在Quickwit中查询:"
 
 # 显示查询示例
 echo -e "\n\033[1;34m插入新数据示例:\033[0m"
-echo "kubectl run pg-insert-$RANDOM --rm -i --restart=Never --image=postgres:13 --namespace=\"$NAMESPACE\" -- \\"
-echo "  psql \"postgresql://${PG_USER}:${PG_PASSWORD}@${PG_SERVICE}:${PG_PORT}/${PG_DATABASE}\" -c \\"
+echo "kubectl run pg-insert-\$RANDOM --rm -i --restart=Never --image=postgres:13 --namespace=\"$NAMESPACE\" -- \\"
+echo "  psql \"$PG_WRITE_CONN\" -c \\"
 echo "  \"INSERT INTO public.messages (message, user_id) VALUES ('测试消息', 1001);\""
 
 echo -e "\nQuickwit查询示例:"
 echo "# 使用CLI查询文本内容(推荐):"
-echo "kubectl exec -it \$(kubectl get pods | grep quickwit | awk '{print \$1}') -- quickwit index search --index messages --query \"message:测试\" --max-hits 10"
+echo "kubectl exec -it $QUICKWIT_POD -- quickwit index search --index messages --query \"message:测试\" --max-hits 10"
 echo ""
 echo "# 或使用REST API查询:"
-echo "kubectl run quickwit-query-\$RANDOM --rm -i --restart=Never --image=curlimages/curl --namespace=\"$NAMESPACE\" -- \\"
-echo "  curl -s -X POST '${QUICKWIT_URL}/api/v1/messages/search' -H 'Content-Type: application/json' -d '{\"query\": \"message:测试\", \"max_hits\": 5}'"
-echo ""
-echo "# 查询特定用户ID:"
-echo "kubectl exec -it \$(kubectl get pods | grep quickwit | awk '{print \$1}') -- quickwit index search --index messages --query \"user_id:1001\" --max-hits 10" 
+echo "kubectl exec -it $QUICKWIT_POD -- curl -s -X POST 'http://localhost:7280/api/v1/messages/search' -H 'Content-Type: application/json' -d '{\"query\": \"message:测试\", \"max_hits\": 5}'" 

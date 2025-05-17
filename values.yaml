@@ -1,7 +1,11 @@
 replicaCount: 1
 storageClass: openebs-cstor
 
+postgresql-ha:
+  enabled: false
+
 postgresql:
+  enabled: true
   image:
     registry: sxwl-registry.cn-beijing.cr.aliyuncs.com
     repository: sxwl-ai/postgresql-vector

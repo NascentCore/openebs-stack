@@ -1,70 +1,77 @@
 postgresql:
-  image:
-    registry: sxwl-registry.cn-beijing.cr.aliyuncs.com
-    repository: sxwl-ai/postgresql-vector
-    tag: "16"
-  repmgrUsername: repmgr
-  repmgrPassword: repmgrpassword
-  repmgrDatabase: repmgr
-  password: yourpassword
-  username: postgres
-  database: yourdb
+  enabled: false
 
-  extendedConf:
-    wal_level: logical
-    max_replication_slots: 10
-    max_wal_senders: 10
+postgresql-ha:
+  enabled: true
+
+  postgresql:
+    image:
+      registry: sxwl-registry.cn-beijing.cr.aliyuncs.com
+      repository: sxwl-ai/postgresql-repmgr-vector
+      tag: "16.1.0"
+
+    username: postgres
+    password: yourpassword
+    database: yourdb
+    
+    extraEnvVars:
+      - name: POSTGRESQL_WAL_LEVEL
+        value: logical
+      - name: POSTGRESQL_MAX_WAL_SENDERS
+        value: "8"
+      - name: POSTGRESQL_MAX_REPLICATION_SLOTS
+        value: "4"
+
+    initdbScripts:
+      create-vector-extension.sql: |
+        CREATE EXTENSION IF NOT EXISTS vector;
+
+  pgpool:
+    adminUsername: admin
+    adminPassword: adminpassword
+    replicaCount: 2
+    resources:
+      requests:
+        memory: 256Mi
+        cpu: 100m
+      limits:
+        memory: 512Mi
+        cpu: 500m
+    affinity:
+      podAntiAffinity:
+        preferredDuringSchedulingIgnoredDuringExecution:
+          - podAffinityTerm:
+              labelSelector:
+                matchLabels:
+                  app.kubernetes.io/component: pgpool
+              topologyKey: kubernetes.io/hostname
+            weight: 1
 
   persistence:
     enabled: true
     storageClass: openebs-cstor
     size: 10Gi
 
-  # 高可用集群配置
-  architecture: replication
-  replicaCount: 2  # 2个从节点 + 1个主节点，总共3个实例
-  
-  # 高可用自动故障转移配置
-  repmgrAutoFailover: true
-  repmgrConnectTimeout: 5
-  repmgrReconnectAttempts: 3
-  repmgrReconnectInterval: 5
-
-  primary:
-    persistence:
-      storageClass: openebs-cstor
-      size: 10Gi
-      
-  readReplicas:
-    persistence:
-      storageClass: openebs-cstor
-      size: 10Gi
-    replicaCount: 2  # 明确设置读取副本数量为2
-      
-  pgpool:
-    enabled: true  # 确保pgpool启用
-    replicaCount: 2  # pgpool副本数量提升为2个实现高可用
-    persistence:
-      enabled: false
-    adminUsername: admin
-    adminPassword: adminpassword
-    configuration: |
-      failover_on_backend_error = on
-      failover_command = '/scripts/pgpool/failover.sh %d %h %p %D %m %H %M %P %r %R'
-      backend_flag0 = 'ALLOW_TO_FAILOVER'
-      backend_flag1 = 'ALLOW_TO_FAILOVER'
-      backend_flag2 = 'ALLOW_TO_FAILOVER'
-
-  volumePermissions:
-    enabled: true
-
+  replicaCount: 3  # 1主 + 2从
   resources:
     requests:
-      memory: 256Mi
-      cpu: 100m
-    limits:
       memory: 512Mi
+      cpu: 200m
+    limits:
+      memory: 1Gi
       cpu: 500m
+
+  replication:
+    enabled: true
+    user: repmgr
+    password: repmgrpassword
+
+  tls:
+    enabled: false
+
+  service:
+    type: ClusterIP
+    port: 5432
 
 redis:
   architecture: replication
@@ -88,6 +95,13 @@ redis:
     persistence:
       storageClass: openebs-cstor
       size: 5Gi
+  affinity:
+    podAntiAffinity:
+      preferredDuringSchedulingIgnoredDuringExecution:
+      - labelSelector:
+          matchLabels:
+            app.kubernetes.io/name: redis
+        topologyKey: kubernetes.io/hostname
 
 rabbitmq:
   image:
@@ -106,6 +120,14 @@ rabbitmq:
     cluster_partition_handling = autoheal
     queue_master_locator = min-masters
     default_vhost = /
+  affinity:
+    podAntiAffinity:
+      requiredDuringSchedulingIgnoredDuringExecution:
+      - labelSelector:
+          matchLabels:
+            app.kubernetes.io/name: rabbitmq
+            app.kubernetes.io/instance: openebs-stack
+        topologyKey: kubernetes.io/hostname
 
 kafka:
   kraft:
@@ -135,6 +157,13 @@ kafka:
       memory: 8Gi
       cpu: 2
   heapOpts: "-Xms2G -Xmx4G"
+  affinity:
+    podAntiAffinity:
+      preferredDuringSchedulingIgnoredDuringExecution:
+      - labelSelector:
+          matchLabels:
+            app.kubernetes.io/name: kafka
+        topologyKey: kubernetes.io/hostname
 
 kafkaConnect:
   enabled: true
@@ -159,6 +188,13 @@ kafkaConnect:
     limits:
       memory: 1Gi
       cpu: 500m
+  affinity:
+    podAntiAffinity:
+      preferredDuringSchedulingIgnoredDuringExecution:
+      - labelSelector:
+          matchLabels:
+            app.kubernetes.io/name: kafka-connect
+        topologyKey: kubernetes.io/hostname
 
 quickwit:
   enabled: true
@@ -173,7 +209,7 @@ quickwit:
         fieldRef:
           fieldPath: metadata.name
     - name: QW_METASTORE_URI
-      value: postgres://postgres:yourpassword@openebs-stack-postgresql-primary:5432/yourdb
+      value: postgres://postgres:yourpassword@openebs-stack-postgresql-ha-pgpool:5432/yourdb
     - name: QW_LISTEN_ADDRESS
       value: 0.0.0.0
     - name: QW_REST_LISTEN_PORT
@@ -189,3 +225,10 @@ quickwit:
     limits:
       memory: 1Gi
       cpu: 500m
+  affinity:
+    podAntiAffinity:
+      preferredDuringSchedulingIgnoredDuringExecution:
+      - labelSelector:
+          matchLabels:
+            app.kubernetes.io/name: quickwit
+        topologyKey: kubernetes.io/hostname

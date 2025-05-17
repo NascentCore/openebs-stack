@@ -3,13 +3,14 @@ kind: Service
 metadata:
   name: openebs-stack-quickwit
   labels:
+    app: quickwit
     app.kubernetes.io/name: quickwit
     app.kubernetes.io/part-of: openebs-stack
 spec:
   ports:
     - port: 7280
       targetPort: 7280
+      name: http
   selector:
-    app.kubernetes.io/name: quickwit
-    app.kubernetes.io/part-of: openebs-stack
+    app: quickwit
   type: ClusterIP
