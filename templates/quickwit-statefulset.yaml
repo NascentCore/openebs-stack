@@ -70,6 +70,8 @@ spec:
   volumeClaimTemplates:
     - metadata:
         name: quickwit-data
+        labels:
+          app.kubernetes.io/instance: openebs-stack
       spec:
         accessModes:
           - ReadWriteOnce
