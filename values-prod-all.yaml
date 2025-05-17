@@ -1,6 +1,8 @@
 postgresql:
   image:
-    tag: 16.2.0-debian-11-r11
+    registry: sxwl-registry.cn-beijing.cr.aliyuncs.com
+    repository: sxwl-ai/postgresql-vector
+    tag: "16"
   repmgrUsername: repmgr
   repmgrPassword: repmgrpassword
   repmgrDatabase: repmgr
@@ -18,16 +20,40 @@ postgresql:
     storageClass: openebs-cstor
     size: 10Gi
 
+  # 高可用集群配置
+  architecture: replication
+  replicaCount: 2  # 2个从节点 + 1个主节点，总共3个实例
+  
+  # 高可用自动故障转移配置
+  repmgrAutoFailover: true
+  repmgrConnectTimeout: 5
+  repmgrReconnectAttempts: 3
+  repmgrReconnectInterval: 5
+
+  primary:
+    persistence:
+      storageClass: openebs-cstor
+      size: 10Gi
+      
+  readReplicas:
+    persistence:
+      storageClass: openebs-cstor
+      size: 10Gi
+    replicaCount: 2  # 明确设置读取副本数量为2
+      
   pgpool:
-    replicaCount: 1
+    enabled: true  # 确保pgpool启用
+    replicaCount: 2  # pgpool副本数量提升为2个实现高可用
     persistence:
       enabled: false
     adminUsername: admin
     adminPassword: adminpassword
-
-  initdbScripts:
-    enable-pgvector.sql: |
-      CREATE EXTENSION IF NOT EXISTS vector;
+    configuration: |
+      failover_on_backend_error = on
+      failover_command = '/scripts/pgpool/failover.sh %d %h %p %D %m %H %M %P %r %R'
+      backend_flag0 = 'ALLOW_TO_FAILOVER'
+      backend_flag1 = 'ALLOW_TO_FAILOVER'
+      backend_flag2 = 'ALLOW_TO_FAILOVER'
 
   volumePermissions:
     enabled: true
@@ -41,21 +67,31 @@ postgresql:
       cpu: 500m
 
 redis:
-  architecture: sentinel
+  architecture: replication
   image:
     tag: 6.2.14-debian-11-r8
+  auth:
+    enabled: true
+    password: "redis-password" # 添加认证
   sentinel:
+    enabled: true
     replicas: 3
+    downAfterMilliseconds: 5000
+    failoverTimeout: 10000
+    parallelSyncs: 1
+  persistence:
+    enabled: true
+    storageClass: openebs-cstor
+    size: 5Gi
   replica:
-    replicaCount: 2
-  master:
+    replicaCount: 3
     persistence:
       storageClass: openebs-cstor
       size: 5Gi
 
 rabbitmq:
   image:
-    tag: 3.13.1-debian-11-r0
+    tag: 3.13.1-debian-12-r1
   replicaCount: 3
   clustering:
     enabled: true
@@ -72,31 +108,84 @@ rabbitmq:
     default_vhost = /
 
 kafka:
-  replicaCount: 3
+  kraft:
+    enabled: true
+    combinedMode: true
+  controller:
+    replicaCount: 3  # 确保有3个controller节点
+    persistence:
+      enabled: true
+      storageClass: openebs-cstor
+      size: 20Gi
+  broker:
+    replicaCount: 0  # 在combinedMode为true时设为0，避免创建额外的broker pod
   persistence:
     enabled: true
     storageClass: openebs-cstor
     size: 20Gi
-  zookeeper:
+  auth:
     enabled: true
-    replicaCount: 3
-    persistence:
-      enabled: true
-      storageClass: openebs-cstor
-      size: 10Gi
-  metrics:
-    kafka:
-      enabled: true
-    zookeeper:
-      enabled: true
+    clientProtocol: sasl
+    interBrokerProtocol: sasl
+  resources:
+    requests:
+      memory: 4Gi
+      cpu: 1
+    limits:
+      memory: 8Gi
+      cpu: 2
+  heapOpts: "-Xms2G -Xmx4G"
 
 kafkaConnect:
   enabled: true
   image: sxwl-registry.cn-beijing.cr.aliyuncs.com/sxwl-ai/kafka-connect-debezium:latest
-  bootstrapServers: kafka:9092
+  bootstrapServers: openebs-stack-kafka:9092
+  replicaCount: 3
+  extraEnvVars:
+    - name: CONNECT_OFFSET_STORAGE_REPLICATION_FACTOR
+      value: "3"
+    - name: CONNECT_CONFIG_STORAGE_REPLICATION_FACTOR
+      value: "3"
+    - name: CONNECT_STATUS_STORAGE_REPLICATION_FACTOR
+      value: "3"
+    - name: CONNECT_KEY_CONVERTER_SCHEMAS_ENABLE
+      value: "true"
+    - name: CONNECT_VALUE_CONVERTER_SCHEMAS_ENABLE
+      value: "true"
+  resources:
+    requests:
+      memory: 512Mi
+      cpu: 250m
+    limits:
+      memory: 1Gi
+      cpu: 500m
 
 quickwit:
   enabled: true
   replicaCount: 3
   pvcSize: 20Gi
   storagePath: /quickwit/indexes
+  storageClass: openebs-cstor
+  image: quickwit/quickwit:0.8.1
+  extraEnvVars:
+    - name: QW_NODE_ID
+      valueFrom:
+        fieldRef:
+          fieldPath: metadata.name
+    - name: QW_METASTORE_URI
+      value: postgres://postgres:yourpassword@openebs-stack-postgresql-primary:5432/yourdb
+    - name: QW_LISTEN_ADDRESS
+      value: 0.0.0.0
+    - name: QW_REST_LISTEN_PORT
+      value: "7280"
+    - name: QW_GOSSIP_LISTEN_PORT
+      value: "7280"
+    - name: QW_CLUSTER_ID
+      value: quickwit-cluster
+  resources:
+    requests:
+      memory: 512Mi
+      cpu: 250m
+    limits:
+      memory: 1Gi
+      cpu: 500m
