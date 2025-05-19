@@ -12,6 +12,13 @@
 
 ---
 
+- [OpenEBS-Stack-部署文档](doc/OpenEBS-Stack-部署文档.md)
+- [PostgreSQL-CDC-工作流文档](doc/PostgreSQL-CDC-工作流文档.md)
+- [OpenEBS-Stack-扩缩容文档](doc/OpenEBS-Stack-扩容文档.md)
+- [OpenEBS-Stack-备份恢复文档](doc/OpenEBS-Stack-备份恢复文档.md)
+
+---
+
 ### 1. 初始化 OpenEBS + cStor
 
 ```bash
