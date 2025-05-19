@@ -4,6 +4,8 @@ metadata:
   name: openebs-stack-kafka-connect
   labels:
     app: kafka-connect
+    app.kubernetes.io/instance: openebs-stack
+    app.kubernetes.io/managed-by: Helm
 spec:
   replicas: {{ .Values.kafkaConnect.replicaCount }}
   selector:

@@ -1,0 +1,47 @@
+{{- if (index .Values "postgresql-ha").enabled }}
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: postgres-role-labeler
+  labels:
+    app.kubernetes.io/instance: openebs-stack
+    app.kubernetes.io/managed-by: Helm
+spec:
+  schedule: "*/1 * * * *"  # 每分钟执行一次
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          restartPolicy: OnFailure
+          containers:
+            - name: labeler
+              image: bitnami/kubectl:1.29
+              imagePullPolicy: IfNotPresent
+              env:
+                - name: PGPASSWORD
+                  valueFrom:
+                    secretKeyRef:
+                      name: openebs-stack-postgresql-ha-postgresql
+                      key: password
+              command:
+                - /bin/bash
+                - -c
+                - |
+                  set -e
+                  for pod in $(kubectl get pods -l app.kubernetes.io/component=postgresql -o name); do
+                    name=$(basename $pod)
+                    echo "Checking $name..."
+                    ROLE=$(kubectl exec "$name" -c postgresql -- \
+                      env PGPASSWORD=$PGPASSWORD \
+                      psql -U postgres -tAc "SELECT pg_is_in_recovery();" 2>/dev/null)
+
+                    if [[ "$ROLE" == "f" ]]; then
+                      echo "$name is PRIMARY"
+                      kubectl label pod "$name" repmgr.role=primary --overwrite
+                    else
+                      echo "$name is REPLICA"
+                      kubectl label pod "$name" repmgr.role- || true
+                    fi
+                  done
+          serviceAccountName: postgres-role-labeler
+{{- end }}

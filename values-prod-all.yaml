@@ -4,6 +4,9 @@ postgresql:
 postgresql-ha:
   enabled: true
 
+  volumePermissions:
+    enabled: true
+
   postgresql:
     image:
       registry: sxwl-registry.cn-beijing.cr.aliyuncs.com
@@ -13,14 +16,16 @@ postgresql-ha:
     username: postgres
     password: yourpassword
     database: yourdb
-    
-    extraEnvVars:
-      - name: POSTGRESQL_WAL_LEVEL
-        value: logical
-      - name: POSTGRESQL_MAX_WAL_SENDERS
-        value: "8"
-      - name: POSTGRESQL_MAX_REPLICATION_SLOTS
-        value: "4"
+
+    extendedConf: |
+      wal_level = logical
+      max_wal_senders = 10
+      max_replication_slots = 10
+      listen_addresses = '*'
+      port = 5432
+      archive_mode = on
+      archive_command = 'mkdir -p /bitnami/postgresql/archive && test ! -f /bitnami/postgresql/archive/%f && cp %p /bitnami/postgresql/archive/%f'
+      wal_keep_size = 1024
 
     initdbScripts:
       create-vector-extension.sql: |
@@ -92,6 +97,9 @@ redis:
     size: 5Gi
   replica:
     replicaCount: 3
+    configuration: |
+      appendonly yes
+      appendfsync everysec
     persistence:
       storageClass: openebs-cstor
       size: 5Gi
@@ -239,22 +247,22 @@ quickwit:
       value: us-east-1
     - name: QW_S3_FORCE_PATH_STYLE_ACCESS
       value: "true"
-    - name: QW_S3_ACCESS_KEY_ID
-      valueFrom:
-        secretKeyRef:
-          name: minio-credentials
-          key: access_key
-    - name: QW_S3_SECRET_ACCESS_KEY
-      valueFrom:
-        secretKeyRef:
-          name: minio-credentials
-          key: secret_key
     - name: AWS_ACCESS_KEY_ID
       valueFrom:
         secretKeyRef:
           name: minio-credentials
           key: access_key
     - name: AWS_SECRET_ACCESS_KEY
+      valueFrom:
+        secretKeyRef:
+          name: minio-credentials
+          key: secret_key
+    - name: QW_S3_ACCESS_KEY_ID
+      valueFrom:
+        secretKeyRef:
+          name: minio-credentials
+          key: access_key
+    - name: QW_S3_SECRET_ACCESS_KEY
       valueFrom:
         secretKeyRef:
           name: minio-credentials

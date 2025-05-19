@@ -1,0 +1,157 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<!DOCTYPE svg PUBLIC "-//W3C//DTD SVG 1.1//EN" "http://www.w3.org/Graphics/SVG/1.1/DTD/svg11.dtd">
+<svg width="1200" height="800" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" version="1.1">
+  <!-- 定义全局样式 -->
+  <defs>
+    <!-- 渐变背景 -->
+    <linearGradient id="dataStoreGradient" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#f0f4ff" />
+      <stop offset="100%" stop-color="#d9e1ff" />
+    </linearGradient>
+    
+    <linearGradient id="messageGradient" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#f6fff0" />
+      <stop offset="100%" stop-color="#e1ffd9" />
+    </linearGradient>
+    
+    <linearGradient id="processingGradient" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#fff0f0" />
+      <stop offset="100%" stop-color="#ffd9e1" />
+    </linearGradient>
+    
+    <linearGradient id="searchGradient" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#fff6f0" />
+      <stop offset="100%" stop-color="#ffe1d9" />
+    </linearGradient>
+
+    <!-- 滤镜 -->
+    <filter id="shadow" x="-10%" y="-10%" width="120%" height="120%">
+      <feDropShadow dx="2" dy="2" stdDeviation="3" flood-opacity="0.3"/>
+    </filter>
+  </defs>
+
+  <!-- 标题 -->
+  <text x="600" y="50" font-family="Arial, sans-serif" font-size="28" text-anchor="middle" font-weight="bold">OpenEBS Stack 高可用架构</text>
+
+  <!-- 存储层 - OpenEBS cStor -->
+  <rect x="50" y="680" width="1100" height="80" rx="10" ry="10" fill="#e6e6ff" stroke="#9999cc" stroke-width="2" filter="url(#shadow)"/>
+  <text x="600" y="725" font-family="Arial, sans-serif" font-size="20" text-anchor="middle" font-weight="bold">OpenEBS cStor 持久化存储</text>
+  
+  <!-- PostgreSQL -->
+  <rect x="100" y="200" width="220" height="130" rx="10" ry="10" fill="url(#dataStoreGradient)" stroke="#6666cc" stroke-width="2" filter="url(#shadow)"/>
+  <text x="210" y="230" font-family="Arial, sans-serif" font-size="18" text-anchor="middle" font-weight="bold">PostgreSQL</text>
+  <text x="210" y="255" font-family="Arial, sans-serif" font-size="14" text-anchor="middle">主从架构 + Repmgr</text>
+  <text x="210" y="275" font-family="Arial, sans-serif" font-size="14" text-anchor="middle">自动故障转移</text>
+  <text x="210" y="295" font-family="Arial, sans-serif" font-size="14" text-anchor="middle">pgvector 支持</text>
+  
+  <!-- Redis -->
+  <rect x="100" y="350" width="220" height="130" rx="10" ry="10" fill="url(#dataStoreGradient)" stroke="#6666cc" stroke-width="2" filter="url(#shadow)"/>
+  <text x="210" y="380" font-family="Arial, sans-serif" font-size="18" text-anchor="middle" font-weight="bold">Redis</text>
+  <text x="210" y="405" font-family="Arial, sans-serif" font-size="14" text-anchor="middle">Sentinel 高可用</text>
+  <text x="210" y="425" font-family="Arial, sans-serif" font-size="14" text-anchor="middle">自动选主</text>
+  <text x="210" y="445" font-family="Arial, sans-serif" font-size="14" text-anchor="middle">读写分离</text>
+  
+  <!-- RabbitMQ -->
+  <rect x="100" y="500" width="220" height="130" rx="10" ry="10" fill="url(#messageGradient)" stroke="#66cc66" stroke-width="2" filter="url(#shadow)"/>
+  <text x="210" y="530" font-family="Arial, sans-serif" font-size="18" text-anchor="middle" font-weight="bold">RabbitMQ</text>
+  <text x="210" y="555" font-family="Arial, sans-serif" font-size="14" text-anchor="middle">多副本集群</text>
+  <text x="210" y="575" font-family="Arial, sans-serif" font-size="14" text-anchor="middle">Quorum Queue</text>
+  <text x="210" y="595" font-family="Arial, sans-serif" font-size="14" text-anchor="middle">高可用消息队列</text>
+  
+  <!-- Kafka & Zookeeper -->
+  <rect x="400" y="200" width="220" height="200" rx="10" ry="10" fill="url(#messageGradient)" stroke="#66cc66" stroke-width="2" filter="url(#shadow)"/>
+  <text x="510" y="230" font-family="Arial, sans-serif" font-size="18" text-anchor="middle" font-weight="bold">Kafka &amp; KRaft</text>
+  <text x="510" y="255" font-family="Arial, sans-serif" font-size="14" text-anchor="middle">多 Broker</text>
+  <text x="510" y="275" font-family="Arial, sans-serif" font-size="14" text-anchor="middle">分区 + 副本容灾</text>
+  <text x="510" y="295" font-family="Arial, sans-serif" font-size="14" text-anchor="middle">全副本持久化</text>
+  <text x="510" y="315" font-family="Arial, sans-serif" font-size="14" text-anchor="middle">KRaft / ZooKeeper</text>
+  
+  <!-- Kafka Connect (Debezium) -->
+  <rect x="400" y="420" width="220" height="130" rx="10" ry="10" fill="url(#processingGradient)" stroke="#cc6666" stroke-width="2" filter="url(#shadow)"/>
+  <text x="510" y="450" font-family="Arial, sans-serif" font-size="18" text-anchor="middle" font-weight="bold">Kafka Connect</text>
+  <text x="510" y="475" font-family="Arial, sans-serif" font-size="14" text-anchor="middle">Debezium CDC</text>
+  <text x="510" y="495" font-family="Arial, sans-serif" font-size="14" text-anchor="middle">数据变更捕获</text>
+  <text x="510" y="515" font-family="Arial, sans-serif" font-size="14" text-anchor="middle">自动注册连接器</text>
+  
+  <!-- Quickwit -->
+  <rect x="700" y="200" width="220" height="130" rx="10" ry="10" fill="url(#searchGradient)" stroke="#cc9966" stroke-width="2" filter="url(#shadow)"/>
+  <text x="810" y="230" font-family="Arial, sans-serif" font-size="18" text-anchor="middle" font-weight="bold">Quickwit</text>
+  <text x="810" y="255" font-family="Arial, sans-serif" font-size="14" text-anchor="middle">多副本 Ingestion/Searcher</text>
+  <text x="810" y="275" font-family="Arial, sans-serif" font-size="14" text-anchor="middle">分布式全文索引</text>
+  <text x="810" y="295" font-family="Arial, sans-serif" font-size="14" text-anchor="middle">高效搜索服务</text>
+  
+  <!-- 应用层（示意） -->
+  <rect x="900" y="350" width="220" height="280" rx="10" ry="10" fill="#f0f0f0" stroke="#999999" stroke-width="2" filter="url(#shadow)"/>
+  <text x="1010" y="380" font-family="Arial, sans-serif" font-size="18" text-anchor="middle" font-weight="bold">应用服务</text>
+  <rect x="920" y="400" width="180" height="40" rx="5" ry="5" fill="#ffffff" stroke="#999999" stroke-width="1"/>
+  <text x="1010" y="425" font-family="Arial, sans-serif" font-size="14" text-anchor="middle">数据写入</text>
+  
+  <rect x="920" y="450" width="180" height="40" rx="5" ry="5" fill="#ffffff" stroke="#999999" stroke-width="1"/>
+  <text x="1010" y="475" font-family="Arial, sans-serif" font-size="14" text-anchor="middle">向量搜索 (pgvector)</text>
+  
+  <rect x="920" y="500" width="180" height="40" rx="5" ry="5" fill="#ffffff" stroke="#999999" stroke-width="1"/>
+  <text x="1010" y="525" font-family="Arial, sans-serif" font-size="14" text-anchor="middle">全文检索 (Quickwit)</text>
+  
+  <rect x="920" y="550" width="180" height="40" rx="5" ry="5" fill="#ffffff" stroke="#999999" stroke-width="1"/>
+  <text x="1010" y="575" font-family="Arial, sans-serif" font-size="14" text-anchor="middle">消息处理</text>
+
+  <!-- 数据流连接线 -->
+  <!-- PostgreSQL -> Debezium -->
+  <path d="M320 250 Q360 250 360 470 Q360 470 400 470" fill="none" stroke="#666666" stroke-width="2" stroke-dasharray="5,3"/>
+  <polygon points="390,465 400,470 390,475" fill="#666666"/>
+  <text x="350" y="360" font-family="Arial, sans-serif" font-size="12" text-anchor="middle" transform="rotate(-90, 350, 360)">CDC 数据变更</text>
+
+  <!-- PostgreSQL -> 应用层 -->
+  <path d="M320 240 Q610 240 610 380 Q610 380 900 380" fill="none" stroke="#666666" stroke-width="2"/>
+  <polygon points="890,375 900,380 890,385" fill="#666666"/>
+  <text x="610" y="360" font-family="Arial, sans-serif" font-size="12" text-anchor="middle">SQL 查询/更新</text>
+
+  <!-- Kafka Connect -> Kafka -->
+  <path d="M510 420 L510 400" fill="none" stroke="#666666" stroke-width="2"/>
+  <polygon points="505,410 510,400 515,410" fill="#666666"/>
+
+  <!-- Kafka -> Quickwit -->
+  <path d="M620 260 L700 260" fill="none" stroke="#666666" stroke-width="2"/>
+  <polygon points="690,255 700,260 690,265" fill="#666666"/>
+  <text x="660" y="250" font-family="Arial, sans-serif" font-size="12" text-anchor="middle">索引数据</text>
+
+  <!-- Quickwit -> 应用层 -->
+  <path d="M810 330 Q810 520 920 520" fill="none" stroke="#666666" stroke-width="2"/>
+  <polygon points="910,515 920,520 910,525" fill="#666666"/>
+  <text x="850" y="460" font-family="Arial, sans-serif" font-size="12" text-anchor="middle">搜索查询</text>
+  
+  <!-- Redis -> 应用层 -->
+  <path d="M320 400 Q610 400 610 460 Q610 460 900 460" fill="none" stroke="#666666" stroke-width="2"/>
+  <polygon points="890,455 900,460 890,465" fill="#666666"/>
+  <text x="610" y="440" font-family="Arial, sans-serif" font-size="12" text-anchor="middle">缓存数据</text>
+  
+  <!-- RabbitMQ -> 应用层 -->
+  <path d="M320 550 Q610 550 610 570 Q610 570 900 570" fill="none" stroke="#666666" stroke-width="2"/>
+  <polygon points="890,565 900,570 890,575" fill="#666666"/>
+  <text x="610" y="540" font-family="Arial, sans-serif" font-size="12" text-anchor="middle">消息订阅</text>
+
+  <!-- OpenEBS 连接线 -->
+  <path d="M210 630 L210 680" fill="none" stroke="#9999cc" stroke-width="2" stroke-dasharray="5,3"/>
+  <path d="M510 630 L510 680" fill="none" stroke="#9999cc" stroke-width="2" stroke-dasharray="5,3"/>
+  <path d="M810 630 L810 680" fill="none" stroke="#9999cc" stroke-width="2" stroke-dasharray="5,3"/>
+  <path d="M1010 630 L1010 680" fill="none" stroke="#9999cc" stroke-width="2" stroke-dasharray="5,3"/>
+  
+  <!-- 图例 -->
+  <rect x="900" y="100" width="230" height="160" rx="5" ry="5" fill="#ffffff" stroke="#cccccc" stroke-width="1" filter="url(#shadow)"/>
+  <text x="915" y="125" font-family="Arial, sans-serif" font-size="16" font-weight="bold">图例</text>
+  
+  <rect x="915" y="140" width="20" height="20" rx="3" ry="3" fill="url(#dataStoreGradient)" stroke="#6666cc" stroke-width="1"/>
+  <text x="945" y="155" font-family="Arial, sans-serif" font-size="14">数据存储服务</text>
+  
+  <rect x="915" y="170" width="20" height="20" rx="3" ry="3" fill="url(#messageGradient)" stroke="#66cc66" stroke-width="1"/>
+  <text x="945" y="185" font-family="Arial, sans-serif" font-size="14">消息服务</text>
+  
+  <rect x="915" y="200" width="20" height="20" rx="3" ry="3" fill="url(#processingGradient)" stroke="#cc6666" stroke-width="1"/>
+  <text x="945" y="215" font-family="Arial, sans-serif" font-size="14">数据处理服务</text>
+  
+  <rect x="915" y="230" width="20" height="20" rx="3" ry="3" fill="url(#searchGradient)" stroke="#cc9966" stroke-width="1"/>
+  <text x="945" y="245" font-family="Arial, sans-serif" font-size="14">搜索服务</text>
+  
+  <!-- 版本信息 -->
+  <text x="600" y="780" font-family="Arial, sans-serif" font-size="14" text-anchor="middle">OpenEBS Stack Chart v0.1.3</text>
+</svg> 

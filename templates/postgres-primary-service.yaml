@@ -1,0 +1,16 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: openebs-stack-postgresql-ha-primary
+  labels:
+    app.kubernetes.io/instance: openebs-stack
+    app.kubernetes.io/managed-by: Helm
+spec:
+  selector:
+    app.kubernetes.io/name: postgresql-ha
+    repmgr.role: primary
+  ports:
+    - name: postgresql
+      port: 5432
+      targetPort: 5432
+  type: ClusterIP

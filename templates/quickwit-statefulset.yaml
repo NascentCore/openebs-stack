@@ -4,6 +4,8 @@ metadata:
   name: openebs-stack-quickwit
   labels:
     app: quickwit
+    app.kubernetes.io/instance: openebs-stack
+    app.kubernetes.io/managed-by: Helm
 spec:
   replicas: {{ .Values.quickwit.replicaCount }}
   serviceName: "openebs-stack-quickwit-headless"  # 为StatefulSet定义Headless Service
@@ -51,6 +53,8 @@ spec:
               mountPath: {{ .Values.quickwit.storagePath }}
             - name: kafka-secrets
               mountPath: /secrets
+            - name: minio-creds
+              mountPath: /minio-secrets
           env:
             - name: QW_KAFKA__BOOTSTRAP_SERVERS
               value: openebs-stack-kafka:9092
@@ -66,6 +70,9 @@ spec:
           secret:
             secretName: openebs-stack-kafka-user-passwords
             optional: true
+        - name: minio-creds
+          secret:
+            secretName: minio-credentials
   # 使用volumeClaimTemplates替代单一PVC
   volumeClaimTemplates:
     - metadata:
@@ -89,6 +96,8 @@ metadata:
   name: openebs-stack-quickwit-headless
   labels:
     app: quickwit
+    app.kubernetes.io/instance: openebs-stack
+    app.kubernetes.io/managed-by: Helm
 spec:
   clusterIP: None  # Headless服务的关键配置
   selector:

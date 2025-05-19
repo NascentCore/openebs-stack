@@ -27,13 +27,13 @@ helm dependency update .
 
 ### 🔧 快速部署全栈(单机)
 ```bash
-helm install openebs-stack ./openebs-stack-chart-final -f values.yaml
+helm install openebs-stack . -f values.yaml
 ```
 
 ## 🔧 快速部署全栈（高可用）
 
 ```bash
-helm install openebs-stack ./openebs-stack-chart-final -f values-prod-all.yaml
+helm install openebs-stack . -f values-prod-all.yaml
 ```
 
 ---
@@ -53,10 +53,10 @@ helm install openebs-stack ./openebs-stack-chart-final -f values-prod-all.yaml
 ## 📁 文件结构说明
 
 | 文件名                        | 说明                         |
-|------------------------------|------------------------------|
+|------------------------------|-----------------------------|
 | `values-prod-all.yaml`       | 一键高可用配置（推荐使用）       |
-| `templates/job-*.yaml`       | 自动注册索引 & connector       |
-| `templates/configmap-*.yaml` | 数据同步配置 & 多表索引定义      |
+| `doc/`                       | 部署、扩容、备份恢复、工作流文档  |
+| `scripts/setup-data-flow.sh` | 初始化工作流测试脚本            |
 
 ---
 
@@ -82,12 +82,12 @@ helm uninstall openebs-stack
 
 ### 插入 PostgreSQL 数据
 ```sql
-INSERT INTO example_table (id, message, user_id, ts) VALUES (1, '你好 Quickwit', 123, now());
+INSERT INTO message (id, message, user_id, ts) VALUES (1, '你好 Quickwit', 123, now());
 ```
 
 ### 查询 Quickwit 索引
 ```bash
-curl http://<quickwit-service>:7280/api/v1/search/public-example_table-index -d '{"query": "你好"}'
+curl http://<quickwit-service>:7280/api/v1/message/search -d '{"query": "message:你好"}'
 ```
 
 ---

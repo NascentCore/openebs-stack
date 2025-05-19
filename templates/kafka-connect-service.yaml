@@ -5,6 +5,8 @@ metadata:
   name: kafka-connect
   labels:
     app: kafka-connect
+    app.kubernetes.io/instance: openebs-stack
+    app.kubernetes.io/managed-by: Helm
 spec:
   selector:
     app: kafka-connect

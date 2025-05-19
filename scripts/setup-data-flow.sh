@@ -40,15 +40,13 @@ detect_deployment_mode() {
 DEPLOYMENT_MODE=$(detect_deployment_mode)
 if [ "$DEPLOYMENT_MODE" == "高可用" ]; then
   print_success "检测到高可用部署模式"
-  # 设置两个连接字符串：一个用于读操作，一个用于写操作
-  PG_READ_SERVICE="openebs-stack-postgresql-ha-pgpool"
-  PG_WRITE_SERVICE="openebs-stack-postgresql-ha-postgresql-0.openebs-stack-postgresql-ha-postgresql-headless"
+  # 使用指向主节点的服务，无需区分读写
+  PG_SERVICE="openebs-stack-postgresql-ha-primary"
   REPLICATION_FACTOR=3
 else
   print_success "检测到单机部署模式"
-  # 单机模式下，读写使用同一连接
-  PG_READ_SERVICE="openebs-stack-postgresql"
-  PG_WRITE_SERVICE="openebs-stack-postgresql"
+  # 单机模式下使用单一连接
+  PG_SERVICE="openebs-stack-postgresql"
   REPLICATION_FACTOR=1
 fi
 
@@ -62,8 +60,7 @@ KAFKA_SERVICE="openebs-stack-kafka"
 KAFKA_TOPIC="postgres.public.messages"
 
 # 创建连接字符串
-PG_READ_CONN="postgresql://${PG_USER}:${PG_PASSWORD}@${PG_READ_SERVICE}:${PG_PORT}/${PG_DATABASE}"
-PG_WRITE_CONN="postgresql://${PG_USER}:${PG_PASSWORD}@${PG_WRITE_SERVICE}:${PG_PORT}/${PG_DATABASE}"
+PG_CONN="postgresql://${PG_USER}:${PG_PASSWORD}@${PG_SERVICE}:${PG_PORT}/${PG_DATABASE}"
 
 # 获取Kafka Connect和Quickwit的Pod名称 - 获取第一个Pod
 KAFKA_CONNECT_POD=$(kubectl get pods -n "$NAMESPACE" | grep "openebs-stack-kafka-connect" | head -1 | awk '{print $1}')
@@ -77,8 +74,7 @@ KAFKA_PASSWORD=$(get_secret_value "openebs-stack-kafka-user-passwords" "client-p
 print_section "配置信息"
 echo "部署模式: $DEPLOYMENT_MODE"
 echo "命名空间: $NAMESPACE"
-echo "PostgreSQL读服务: $PG_READ_SERVICE"
-echo "PostgreSQL写服务: $PG_WRITE_SERVICE"
+echo "PostgreSQL服务: $PG_SERVICE"
 echo "Kafka服务: $KAFKA_SERVICE"
 echo "Kafka Pod: $KAFKA_POD"
 echo "Kafka Connect Pod: $KAFKA_CONNECT_POD"
@@ -94,9 +90,10 @@ if [ "$DEPLOYMENT_MODE" == "高可用" ]; then
   wait_for_pod_ready "openebs-stack-postgresql-ha-postgresql" "$NAMESPACE" 60 15 || print_error "PostgreSQL HA节点未准备就绪"
   print_success "PostgreSQL HA节点准备就绪"
 
-  print_step "等待PostgreSQL pgpool准备就绪..."
-  wait_for_pod_ready "openebs-stack-postgresql-ha-pgpool" "$NAMESPACE" 60 15 || print_error "PostgreSQL pgpool未准备就绪"
-  print_success "PostgreSQL pgpool准备就绪"
+  print_step "等待PostgreSQL主节点服务准备就绪..."
+  # 检查主节点服务是否可用
+  kubectl get svc "$PG_SERVICE" -n "$NAMESPACE" > /dev/null 2>&1 || print_error "PostgreSQL主节点服务未准备就绪"
+  print_success "PostgreSQL主节点服务准备就绪"
 else
   print_step "等待PostgreSQL准备就绪..."
   wait_for_pod_ready "openebs-stack-postgresql" "$NAMESPACE" 60 15 || print_error "PostgreSQL未准备就绪"
@@ -125,7 +122,7 @@ fi
 # 检查Vector扩展安装状态
 print_section "检查Vector扩展"
 kubectl run pg-install-vector-$RANDOM --rm -i --restart=Never --image=postgres:13 --namespace="$NAMESPACE" -- \
-  psql "$PG_WRITE_CONN" -c \
+  psql "$PG_CONN" -c \
   "CREATE EXTENSION IF NOT EXISTS vector;" || print_error "安装Vector扩展失败"
 print_success "Vector扩展安装成功"
 
@@ -142,12 +139,12 @@ CREATE TABLE IF NOT EXISTS public.messages (
 );
 "
 kubectl run pg-create-table-$RANDOM --rm -i --restart=Never --image=postgres:13 --namespace="$NAMESPACE" -- \
-  psql "$PG_WRITE_CONN" -c "$MESSAGES_TABLE_SQL" || print_error "创建消息表失败"
+  psql "$PG_CONN" -c "$MESSAGES_TABLE_SQL" || print_error "创建消息表失败"
 print_success "消息表创建成功"
 
 print_step "插入测试数据..."
 kubectl run pg-insert-data-$RANDOM --rm -i --restart=Never --image=postgres:13 --namespace="$NAMESPACE" -- \
-  psql "$PG_WRITE_CONN" -c \
+  psql "$PG_CONN" -c \
   "INSERT INTO public.messages (message, user_id, ts) VALUES 
    ('这是一条测试消息', 1001, '2025-05-15T05:20:06.246314Z'),
    ('这是另一条测试消息', 1002, '2025-05-15T05:50:06.246314Z'),
@@ -166,7 +163,7 @@ DROP PUBLICATION IF EXISTS dbz_publication;
 CREATE PUBLICATION dbz_publication FOR TABLE public.messages;
 "
 kubectl run pg-create-pub-$RANDOM --rm -i --restart=Never --image=postgres:13 --namespace="$NAMESPACE" -- \
-  psql "$PG_WRITE_CONN" -c "$PG_PUBLICATION_SQL" || print_error "创建PostgreSQL publication失败"
+  psql "$PG_CONN" -c "$PG_PUBLICATION_SQL" || print_error "创建PostgreSQL publication失败"
 print_success "PostgreSQL publication创建成功"
 
 # 第3步: 配置Kafka Connect
@@ -185,21 +182,21 @@ sleep 5
 
 print_step "删除PostgreSQL复制槽(如果存在)..."
 kubectl run pg-drop-slot-$RANDOM --rm -i --restart=Never --image=postgres:13 --namespace="$NAMESPACE" -- \
-  psql "$PG_WRITE_CONN" -c \
+  psql "$PG_CONN" -c \
   "SELECT pg_drop_replication_slot(slot_name) FROM pg_replication_slots WHERE slot_name = 'debezium';" || echo "未找到复制槽或删除失败，继续创建..."
 
 # 等待几秒钟确保删除操作完成
 sleep 5
 
 print_step "创建Debezium PostgreSQL连接器..."
-# 构建PostgreSQL连接器配置 - 直接连接主节点，不使用pgpool
+# 构建PostgreSQL连接器配置 - 使用单一主节点服务
 PG_CONNECTOR_CONFIG=$(cat <<EOF
 {
   "name": "postgres-source",
   "config": {
     "connector.class": "io.debezium.connector.postgresql.PostgresConnector",
     "tasks.max": "1",
-    "database.hostname": "$PG_WRITE_SERVICE",
+    "database.hostname": "$PG_SERVICE",
     "database.port": "$PG_PORT",
     "database.user": "$PG_USER",
     "database.password": "$PG_PASSWORD",
@@ -245,9 +242,6 @@ sleep 10
 # 第4步: 确认Kafka主题是否已经创建
 print_section "验证Kafka主题"
 
-print_step "检查Kafka中的主题是否存在..."
-
-# 跳过Kafka主题检查，直接创建主题
 print_step "直接创建Kafka主题 $KAFKA_TOPIC..."
 
 # 准备Kafka认证配置文件
@@ -405,7 +399,7 @@ echo "可以在PostgreSQL中插入新数据，然后在Quickwit中查询:"
 # 显示查询示例
 echo -e "\n\033[1;34m插入新数据示例:\033[0m"
 echo "kubectl run pg-insert-\$RANDOM --rm -i --restart=Never --image=postgres:13 --namespace=\"$NAMESPACE\" -- \\"
-echo "  psql \"$PG_WRITE_CONN\" -c \\"
+echo "  psql \"$PG_CONN\" -c \\"
 echo "  \"INSERT INTO public.messages (message, user_id) VALUES ('测试消息', 1001);\""
 
 echo -e "\nQuickwit查询示例:"
